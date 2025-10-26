@@ -43,6 +43,7 @@ class TestLfuDictCache(TestCase):
         actual: list[str]  = sorted([k for k in self.cache] )
         self.assertEqual(expected, actual)  
         
-        
+if __name__ == "__main__":
+    main()
         
          
