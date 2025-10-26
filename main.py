@@ -52,9 +52,9 @@ class  LfuDictCache(Generic[K, V]):
         if count:
             self.__extract(key, count)
         elif len(self) == self.max_size:
-            self.__pop_last() 
+            self.__pop_last()
+            self.min_count = 1
         self.__put(key, value, count + 1)
-        self.min_count = min(self.min_count, count + 1)
 
     def __delitem__(self, key: K):
         # method for deleting key-value association from a dictionary with throwing KeyError exception
