@@ -1,7 +1,5 @@
 from collections import OrderedDict
 from typing import  Hashable, Generic, Iterator, TypeVar
-from sortedcontainers import SortedDict
-from dataclasses import dataclass
 K = TypeVar('K', bound=Hashable)
 V = TypeVar("V")
 
@@ -12,14 +10,17 @@ class  LfuDictCache(Generic[K, V]):
        if max_size < 1:
            raise ValueError("The dictionary size cannot be less then 1")
        self.max_size = max_size
+       self.min_count = 1
        self.nodes: dict[K, int] = {} # stores frequencies of entries
-       self.freq_dict: SortedDict = SortedDict() # keys: frequencies of entries -> OrderedDict (as FIFO) of [K, V]
+       self.freq_dict: dict[int, OrderedDict] = {} # keys: frequencies of entries -> OrderedDict (as FIFO) of [K, V]
 
     def __extract(self, key: K, count: int) -> V:
         ordered_dict: OrderedDict = self.freq_dict[count]
         value: V = ordered_dict.pop(key)
         if not ordered_dict:
             del self.freq_dict[count]
+            if count == self.min_count:
+                self.min_count += 1
         return value
     
     def __put(self, key: K, value: V, count: int):
@@ -33,13 +34,14 @@ class  LfuDictCache(Generic[K, V]):
         count: int = self.nodes[key]
         value: V = self.__extract(key, count)
         self.__put(key, value, count + 1)
+        
         return value
     
     def __pop_last(self) -> V:
-        count, ordered_dict = self.freq_dict.peekitem(0)
+        ordered_dict = self.freq_dict[self.min_count]
         key, value = ordered_dict.popitem(last = False)
         if not ordered_dict:    
-            del self.freq_dict[count]
+            del self.freq_dict[self.min_count]
         del self.nodes[key]
         
         return value
@@ -52,12 +54,18 @@ class  LfuDictCache(Generic[K, V]):
         elif len(self) == self.max_size:
             self.__pop_last() 
         self.__put(key, value, count + 1)
+        self.min_count = min(self.min_count, count + 1)
 
     def __delitem__(self, key: K):
         # method for deleting key-value association from a dictionary with throwing KeyError exception
         # in the case of missing key like del dict[key] 
         count: int = self.nodes[key]
-        self.__extract(key, count)
+        ordered_dict: OrderedDict = self.freq_dict[count]
+        ordered_dict.pop(key)
+        if not ordered_dict:
+            del self.freq_dict[count]
+            if count == self.min_count:
+                self.min_count = min(self.freq_dict.keys())
         del self.nodes[key]
 
     def __iter__(self) -> Iterator[K]:
