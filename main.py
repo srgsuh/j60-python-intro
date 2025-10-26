@@ -1,11 +1,14 @@
 from collections import OrderedDict
 from typing import  Hashable, Generic, Iterator, TypeVar
-from sortedcontainers import SortedDict
+from sortedcontainers import SortedList
+from dataclasses import dataclass
 K = TypeVar('K', bound=Hashable)
 V = TypeVar("V")
 
   ####################################################################################
-  
+
+
+
 class DictCache(OrderedDict[K, V]) :
     def __init__(self, maxsize=128):
         super().__init__() # calls constructor of OrderedDict that has all methods for keeping insertion order
@@ -28,15 +31,33 @@ class DictCache(OrderedDict[K, V]) :
         self.move_to_end(key)
         if len(self) > self.maxsize:
             self.popitem(last = False)
+
+@dataclass
+class FreqCounter[K]:
+    frequency: int
+    key: K
+
         
 class  LfuDictCache(Generic[K, V]):
     def __init__(self, max_size: int):
         #TODO write constructor for defining encapsulated data structure
-        raise NotImplementedError()
+        self.max_size = max_size
+        self.data: DictCache[K, tuple[V, FreqCounter]] = DictCache(max_size)
+        self.data_freq: SortedList = SortedList()
+    
+    def __update_frequency(self, counter: FreqCounter) -> FreqCounter:
+        self.data_freq.remove(counter)
+        new_counter = FreqCounter(counter.frequency + 1, counter.key)
+        self.data_freq.add(new_counter)
+        return new_counter
+
     def __getitem__(self, key: K) -> V:
         #TODO method for square braces operator [] getting key and returnin value with throwing
         #KeyError exception if key is missing
-        raise NotImplementedError()
+        value, counter = self.data[key]
+        self.data[key] = value, self.__update_frequency(counter)
+        return value
+
     def __setitem__(self, key: K, value: V):
         # TODO method for square braces operator [] either updating existing key-value association or adding a new one
         
