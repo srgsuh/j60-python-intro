@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from typing import  Hashable, Generic, Iterator, TypeVar
-from sortedcontainers import SortedList
+from sortedcontainers import SortedDict
 from dataclasses import dataclass
 K = TypeVar('K', bound=Hashable)
 V = TypeVar("V")
@@ -32,43 +32,72 @@ class DictCache(OrderedDict[K, V]) :
         if len(self) > self.maxsize:
             self.popitem(last = False)
 
-@dataclass
-class FreqCounter[K]:
-    frequency: int
+@dataclass(frozen=True)
+class CacheNode[K, V]:
     key: K
-
+    value: V
+    count: int
         
 class  LfuDictCache(Generic[K, V]):
     def __init__(self, max_size: int):
-        #TODO write constructor for defining encapsulated data structure
-        self.max_size = max_size
-        self.data: DictCache[K, tuple[V, FreqCounter]] = DictCache(max_size)
-        self.data_freq: SortedList = SortedList()
+       #TODO write constructor for defining encapsulated data structure
+       if max_size < 1:
+           raise ValueError("The dictionary size cannot be less then 1")
+       self.max_size = max_size
+       self.nodes: dict[K, CacheNode[K, V]] = {}
+       self.freq_dict: SortedDict = SortedDict()
+
+    def __eject(self, cache_node: CacheNode[K, V]):
+        ordered_dict: OrderedDict = self.freq_dict[cache_node.count]
+        ordered_dict.pop(cache_node.key)
+        if not ordered_dict:
+            del self.freq_dict[cache_node.count]
     
-    def __update_frequency(self, counter: FreqCounter) -> FreqCounter:
-        self.data_freq.remove(counter)
-        new_counter = FreqCounter(counter.frequency + 1, counter.key)
-        self.data_freq.add(new_counter)
-        return new_counter
+    def __put(self, cache_node: CacheNode[K, V]):
+        key, count = cache_node.key, cache_node.count
+        if not count in self.freq_dict:
+            self.freq_dict[count] = OrderedDict()
+        ordered_dict: OrderedDict = self.freq_dict[count]
+        ordered_dict[key] = cache_node
+        self.nodes[key] = cache_node
 
     def __getitem__(self, key: K) -> V:
         #TODO method for square braces operator [] getting key and returnin value with throwing
         #KeyError exception if key is missing
-        value, counter = self.data[key]
-        self.data[key] = value, self.__update_frequency(counter)
-        return value
+        node = self.nodes[key]
+        self.__eject(node)
+        self.__put(CacheNode(key, node.value, node.count + 1))
+        return node.value
+    
+    def __pop_last(self) -> CacheNode[K, V]:
+        count, ordered_dict = self.freq_dict.peekitem(0)
+        key, last_node = ordered_dict.popitem(last = False)
+        if not ordered_dict:    
+            del self.freq_dict[count]
+        del self.nodes[key]
+        
+        return last_node
 
     def __setitem__(self, key: K, value: V):
         # TODO method for square braces operator [] either updating existing key-value association or adding a new one
-        
-        raise NotImplementedError() 
+        node: CacheNode[K, V] | None = self.nodes.get(key)
+        if node:
+            self.__eject(node)
+        elif len(self) == self.max_size:
+            self.__pop_last() 
+        self.__put(CacheNode(key, value, node.count + 1 if node else 1))
+
     def __delitem__(self, key: K):
         # TODO method for deleting key-value association from a dictionary with throwing KeyError exception
         # in the case of missing key like del dict[key] 
-        raise NotImplementedError()
+        node: CacheNode[K, V] = self.nodes[key]
+        self.__eject(node)
+        del self.nodes[key]
+
     def __iter__(self) -> Iterator[K]:
         # TODO method for iterating keys in arbitrary order 
-        raise NotImplementedError()
+        return iter(self.nodes.keys())
+    
     def __len__(self)->int:
         # TODO method returning number of key-value associations (pairs)
-        raise NotImplementedError()
+        return len(self.nodes)
